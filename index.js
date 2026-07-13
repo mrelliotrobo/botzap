@@ -149,46 +149,69 @@ async function startBot() {
     });
 
     // =====================================
-    // EVENTO PRINCIPAL
+    // EVENTO DE MENSAGEM (COM LOG EXTENSIVO)
     // =====================================
-    client.on('message_create', async (message) => {
-        console.log(`📩 Mensagem de ${message.from}: "${message.body || '[mídia]'}"`);
+    // Usamos o evento 'message' porque é mais confiável em algumas versões
+    client.on('message', async (message) => {
+        // LOG DE TODAS AS MENSAGENS (IMPRESCINDÍVEL PARA DEPURAÇÃO)
+        console.log('🔍 [MESSAGE EVENT] Mensagem recebida!');
+        console.log(`  - De: ${message.from}`);
+        console.log(`  - Corpo: "${message.body || '[mídia]'}"`);
+        console.log(`  - Tem mídia? ${message.hasMedia}`);
+        console.log(`  - É resposta? ${message.hasQuotedMsg}`);
+        console.log(`  - Data: ${new Date().toISOString()}`);
 
+        // Obtém o chat para verificar se é grupo
         const chat = await message.getChat();
+        console.log(`  - É grupo? ${chat.isGroup}`);
+        if (chat.isGroup) {
+            console.log(`  - Nome do grupo: "${chat.name}"`);
+            console.log(`  - ID do grupo: ${chat.id._serialized}`);
+        }
+
+        // Se não for grupo, ignora
         if (!chat.isGroup) {
-            console.log('  ↳ Não é grupo');
+            console.log('  ↳ Ignorando (não é grupo)');
             return;
         }
 
-        console.log(`  ↳ Nome do grupo: "${chat.name}"`);
-
+        // Verifica se o nome do grupo corresponde (com log para comparar)
         const normalize = (s) => s.trim().toLowerCase().replace(/\s+/g, ' ');
-        if (normalize(chat.name) !== normalize(TARGET_GROUP_NAME)) {
-            console.log(`  ↳ Não é o grupo "${TARGET_GROUP_NAME}"`);
+        const detectedName = normalize(chat.name);
+        const targetName = normalize(TARGET_GROUP_NAME);
+        console.log(`  - Nome normalizado detectado: "${detectedName}"`);
+        console.log(`  - Nome normalizado esperado: "${targetName}"`);
+
+        if (detectedName !== targetName) {
+            console.log(`  ↳ Ignorando (grupo não é "${TARGET_GROUP_NAME}")`);
             return;
         }
 
         console.log('  ✅ Grupo correto!');
 
+        // Verifica se é resposta
         if (!message.hasQuotedMsg) {
-            console.log('  ↳ Não é resposta');
+            console.log('  ↳ Ignorando (não é resposta)');
             return;
         }
 
         const quoted = await message.getQuotedMessage();
+        console.log(`  - Mensagem citada tem mídia? ${quoted.hasMedia}`);
         if (!quoted.hasMedia) {
-            console.log('  ↳ Mensagem citada não tem mídia');
+            console.log('  ↳ Ignorando (mensagem citada não tem mídia)');
             return;
         }
 
         const text = message.body?.trim() || '';
+        console.log(`  - Texto da mensagem: "${text}"`);
         if (text !== COMMAND) {
-            console.log(`  ↳ Comando não é "${COMMAND}"`);
+            console.log(`  ↳ Ignorando (comando não é "${COMMAND}")`);
             return;
         }
 
         console.log('  ✅ Comando !fig detectado!');
 
+        // Baixa a mídia para verificar o tipo
         const media = await quoted.downloadMedia();
         if (!media) {
             console.log('  ↳ Falha ao baixar mídia');
@@ -196,12 +219,14 @@ async function startBot() {
             return;
         }
 
+        console.log(`  - Tipo de mídia: ${media.mimetype}`);
         if (!media.mimetype.startsWith('image/') && !media.mimetype.startsWith('video/')) {
             console.log(`  ↳ Mídia não suportada: ${media.mimetype}`);
             await chat.sendMessage('⚠️ Envie uma imagem ou vídeo/GIF.');
             return;
         }
 
+        // Evita loop com stickers do próprio bot
         if (quoted.fromMe && media.mimetype === 'image/webp') {
             console.log('  ↳ É sticker do próprio bot. Ignorando.');
             return;
@@ -214,6 +239,14 @@ async function startBot() {
         if (!isProcessing) processQueue();
     });
 
+    // Também mantém o 'message_create' para garantir
+    client.on('message_create', async (message) => {
+        console.log('🔍 [MESSAGE_CREATE] Mensagem recebida!');
+        // O mesmo código pode ser repetido ou podemos chamar uma função comum
+        // Mas para simplificar, vamos apenas logar que o evento ocorreu
+        // e depois chamar o mesmo handler se quiser
+    });
+
     // =====================================
     // QR CODE E AUTENTICAÇÃO
     // =====================================
@@ -221,7 +254,6 @@ async function startBot() {
         console.log('🔑 QR Code gerado!');
         
         try {
-            // Gera a imagem PNG do QR Code em base64
             latestQRCode = await qrcode.toDataURL(qr, {
                 type: 'image/png',
                 width: 300,
@@ -234,7 +266,6 @@ async function startBot() {
             
             console.log('✅ QR Code pronto para escanear!');
             console.log('🌐 Acesse: https://' + (process.env.RENDER_EXTERNAL_HOSTNAME || 'seu-projeto') + '.onrender.com/');
-            console.log('📱 Ou acesse: Configurações do WhatsApp > Dispositivos vinculados > Vincular dispositivo');
         } catch (err) {
             console.error('❌ Erro ao gerar QR Code:', err);
         }
@@ -271,10 +302,9 @@ async function startBot() {
 // =====================================
 const app = express();
 
-// Rota principal - mostra o QR Code
+// Rota principal
 app.get('/', (req, res) => {
     if (latestQRCode) {
-        // Se o QR Code já foi gerado, mostra a página com ele
         res.send(`
             <!DOCTYPE html>
             <html>
@@ -283,52 +313,19 @@ app.get('/', (req, res) => {
                 <meta charset="UTF-8">
                 <meta name="viewport" content="width=device-width, initial-scale=1.0">
                 <style>
-                    body {
-                        font-family: Arial, sans-serif;
-                        max-width: 600px;
-                        margin: 0 auto;
-                        padding: 20px;
-                        text-align: center;
-                        background: #f5f5f5;
-                    }
-                    .card {
-                        background: white;
-                        border-radius: 12px;
-                        padding: 30px;
-                        box-shadow: 0 4px 6px rgba(0,0,0,0.1);
-                    }
-                    img {
-                        max-width: 100%;
-                        height: auto;
-                        border: 3px solid #ddd;
-                        border-radius: 8px;
-                        margin: 20px 0;
-                    }
-                    .status {
-                        display: inline-block;
-                        padding: 8px 16px;
-                        border-radius: 20px;
-                        font-weight: bold;
-                    }
-                    .waiting { background: #ffc107; color: #000; }
-                    .connected { background: #4CAF50; color: #fff; }
-                    code {
-                        background: #f0f0f0;
-                        padding: 2px 8px;
-                        border-radius: 4px;
-                        font-family: monospace;
-                    }
-                    hr {
-                        margin: 30px 0;
-                        border: 1px solid #eee;
-                    }
+                    body { font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px; text-align: center; background: #f5f5f5; }
+                    .card { background: white; border-radius: 12px; padding: 30px; box-shadow: 0 4px 6px rgba(0,0,0,0.1); }
+                    img { max-width: 100%; height: auto; border: 3px solid #ddd; border-radius: 8px; margin: 20px 0; }
+                    .status { display: inline-block; padding: 8px 16px; border-radius: 20px; font-weight: bold; background: #4CAF50; color: #fff; }
+                    code { background: #f0f0f0; padding: 2px 8px; border-radius: 4px; font-family: monospace; }
+                    hr { margin: 30px 0; border: 1px solid #eee; }
                 </style>
             </head>
             <body>
                 <div class="card">
                     <h1>🤖 Bot Zap - Figurinhas</h1>
-                    <p><strong>Status:</strong> <span class="status waiting">⏳ Aguardando conexão...</span></p>
-                    <p>Para conectar o bot, escaneie o QR Code abaixo com o WhatsApp:</p>
+                    <p><strong>Status:</strong> <span class="status">✅ Conectado</span></p>
+                    <p>Escaneie o QR Code abaixo para conectar o bot:</p>
                     <img src="${latestQRCode}" alt="QR Code">
                     <p><strong>📌 Como escanear:</strong></p>
                     <ol style="text-align: left; max-width: 400px; margin: 0 auto;">
@@ -340,17 +337,14 @@ app.get('/', (req, res) => {
                     <hr>
                     <p><strong>Comando:</strong> Responda uma imagem com <code>!fig</code></p>
                     <p><strong>Grupo:</strong> os mídia de rec</p>
-                    <p style="font-size: 12px; color: #999;">O QR Code expira em alguns minutos. Atualize a página se necessário.</p>
                 </div>
                 <script>
-                    // Atualiza a página automaticamente a cada 30 segundos para verificar se o QR Code mudou
                     setTimeout(() => location.reload(), 30000);
                 </script>
             </body>
             </html>
         `);
     } else {
-        // QR Code ainda não foi gerado
         res.send(`
             <!DOCTYPE html>
             <html>
@@ -359,53 +353,20 @@ app.get('/', (req, res) => {
                 <meta charset="UTF-8">
                 <meta name="viewport" content="width=device-width, initial-scale=1.0">
                 <style>
-                    body {
-                        font-family: Arial, sans-serif;
-                        max-width: 600px;
-                        margin: 0 auto;
-                        padding: 20px;
-                        text-align: center;
-                        background: #f5f5f5;
-                    }
-                    .card {
-                        background: white;
-                        border-radius: 12px;
-                        padding: 30px;
-                        box-shadow: 0 4px 6px rgba(0,0,0,0.1);
-                    }
-                    .loading {
-                        font-size: 48px;
-                        margin: 20px 0;
-                    }
-                    .spinner {
-                        border: 4px solid #f3f3f3;
-                        border-top: 4px solid #3498db;
-                        border-radius: 50%;
-                        width: 40px;
-                        height: 40px;
-                        animation: spin 1s linear infinite;
-                        margin: 20px auto;
-                    }
-                    @keyframes spin {
-                        0% { transform: rotate(0deg); }
-                        100% { transform: rotate(360deg); }
-                    }
+                    body { font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px; text-align: center; background: #f5f5f5; }
+                    .card { background: white; border-radius: 12px; padding: 30px; box-shadow: 0 4px 6px rgba(0,0,0,0.1); }
+                    .spinner { border: 4px solid #f3f3f3; border-top: 4px solid #3498db; border-radius: 50%; width: 40px; height: 40px; animation: spin 1s linear infinite; margin: 20px auto; }
+                    @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
                 </style>
             </head>
             <body>
                 <div class="card">
                     <h1>🤖 Bot Zap - Figurinhas</h1>
-                    <div class="loading">⏳</div>
-                    <h2>Aguardando QR Code...</h2>
                     <div class="spinner"></div>
-                    <p>O bot está iniciando. O QR Code aparecerá em alguns segundos.</p>
+                    <h2>Aguardando QR Code...</h2>
                     <p>Atualize a página se não aparecer em 1 minuto.</p>
-                    <hr>
-                    <p><strong>Comando:</strong> Responda uma imagem com <code>!fig</code></p>
-                    <p><strong>Grupo:</strong> os mídia de rec</p>
                 </div>
                 <script>
-                    // Atualiza a página automaticamente a cada 5 segundos até o QR Code aparecer
                     setTimeout(() => location.reload(), 5000);
                 </script>
             </body>
@@ -414,33 +375,10 @@ app.get('/', (req, res) => {
     }
 });
 
-// Rota para servir apenas o QR Code em formato PNG (para escanear com outros apps)
-app.get('/qrcode', (req, res) => {
-    if (latestQRCode) {
-        // Remove o prefixo "data:image/png;base64," para obter apenas o base64
-        const base64Data = latestQRCode.replace(/^data:image\/png;base64,/, '');
-        const imgBuffer = Buffer.from(base64Data, 'base64');
-        res.writeHead(200, {
-            'Content-Type': 'image/png',
-            'Content-Length': imgBuffer.length
-        });
-        res.end(imgBuffer);
-    } else {
-        res.status(404).send('QR Code ainda não foi gerado. Aguarde alguns segundos.');
-    }
-});
-
-// Rota de status (para verificar se o bot está vivo)
 app.get('/status', (req, res) => {
-    res.json({
-        status: 'online',
-        connected: latestQRCode !== null,
-        queueSize: queue.length,
-        isProcessing: isProcessing
-    });
+    res.json({ status: 'online', connected: !!latestQRCode, queueSize: queue.length });
 });
 
-// Inicia o servidor web
 app.listen(PORT, '0.0.0.0', () => {
     console.log(`✅ Servidor HTTP rodando na porta ${PORT}`);
     console.log(`🌐 Acesse: https://${process.env.RENDER_EXTERNAL_HOSTNAME || 'seu-projeto'}.onrender.com/`);
