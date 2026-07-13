@@ -1,6 +1,8 @@
 const { Client, LocalAuth, MessageMedia } = require('whatsapp-web.js');
-const qrcode = require('qrcode-terminal');
+const qrcode = require('qrcode');
 const sharp = require('sharp');
+const fs = require('fs');
+const path = require('path');
 const chromium = require('@sparticuz/chromium');
 
 // =====================================
@@ -17,13 +19,10 @@ const PROCESS_DELAY_MAX = 7000;
 const MAX_QUEUE_SIZE = 50;
 
 // =====================================
-// CLIENTE WHATSAPP (COM CONFIGURAÇÃO PARA O RENDER)
+// CLIENTE WHATSAPP (com suporte ao Render)
 // =====================================
-let client;
-
-// Inicialização assíncrona para usar o chromium
 (async () => {
-    client = new Client({
+    const client = new Client({
         authStrategy: new LocalAuth(),
         puppeteer: {
             headless: true,
@@ -209,12 +208,36 @@ let client;
     });
 
     // =====================================
-    // AUTENTICAÇÃO
+    // QR CODE E AUTENTICAÇÃO
     // =====================================
-    client.on('qr', qr => {
-        qrcode.generate(qr, { small: true });
-        console.log('🔑 Escaneie o QR Code com o WhatsApp do seu celular.');
-        console.log('📱 Acesse: Configurações > Dispositivos vinculados > Vincular dispositivo');
+    client.on('qr', async (qr) => {
+        console.log('🔑 QR Code gerado!');
+        
+        try {
+            // Cria a pasta public se não existir
+            const publicDir = path.join(__dirname, 'public');
+            if (!fs.existsSync(publicDir)) {
+                fs.mkdirSync(publicDir, { recursive: true });
+            }
+            
+            // Gera a imagem PNG do QR Code
+            const qrPath = path.join(publicDir, 'qrcode.png');
+            await qrcode.toFile(qrPath, qr, {
+                type: 'png',
+                width: 300,
+                margin: 2,
+                color: {
+                    dark: '#000000',
+                    light: '#ffffff'
+                }
+            });
+            
+            console.log(`📱 QR Code salvo em: ${qrPath}`);
+            console.log(`🌐 Acesse: https://seu-projeto.onrender.com/qrcode.png para escanear`);
+            console.log('📱 Ou acesse: Configurações do WhatsApp > Dispositivos vinculados > Vincular dispositivo');
+        } catch (err) {
+            console.error('❌ Erro ao gerar QR Code:', err);
+        }
     });
 
     client.on('ready', () => {
@@ -236,6 +259,9 @@ let client;
         console.log('🔄 Reinicie o bot para reconectar.');
     });
 
+    // =====================================
+    // INICIALIZA
+    // =====================================
     client.initialize().catch(err => {
         console.error('❌ Erro ao inicializar:', err);
     });
