@@ -1,0 +1,19 @@
+{
+  "name": "bot-zap",
+  "version": "1.0.0",
+  "description": "Bot para criar figurinhas no WhatsApp",
+  "main": "index.js",
+  "scripts": {
+    "start": "node index.js",
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "keywords": ["whatsapp", "bot", "sticker"],
+  "author": "",
+  "license": "ISC",
+  "type": "commonjs",
+  "dependencies": {
+    "qrcode-terminal": "^0.12.0",
+    "sharp": "^0.35.3",
+    "whatsapp-web.js": "^1.34.7"
+  }
+}
