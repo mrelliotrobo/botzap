@@ -22,6 +22,9 @@ const PROCESS_DELAY_MIN = 4000;
 const PROCESS_DELAY_MAX = 7000;
 const MAX_QUEUE_SIZE = 50;
 
+// Variável global para armazenar o QR Code (base64)
+let latestQRCode = null;
+
 // =====================================
 // FILA E PROCESSAMENTO
 // =====================================
@@ -216,16 +219,11 @@ async function startBot() {
     // =====================================
     client.on('qr', async (qr) => {
         console.log('🔑 QR Code gerado!');
-
+        
         try {
-            const publicDir = path.join(__dirname, 'public');
-            if (!fs.existsSync(publicDir)) {
-                fs.mkdirSync(publicDir, { recursive: true });
-            }
-
-            const qrPath = path.join(publicDir, 'qrcode.png');
-            await qrcode.toFile(qrPath, qr, {
-                type: 'png',
+            // Gera a imagem PNG do QR Code em base64
+            latestQRCode = await qrcode.toDataURL(qr, {
+                type: 'image/png',
                 width: 300,
                 margin: 2,
                 color: {
@@ -233,9 +231,9 @@ async function startBot() {
                     light: '#ffffff'
                 }
             });
-
-            console.log(`📱 QR Code salvo em: ${qrPath}`);
-            console.log(`🌐 Acesse: https://${process.env.RENDER_EXTERNAL_HOSTNAME || 'seu-projeto'}.onrender.com/qrcode.png para escanear`);
+            
+            console.log('✅ QR Code pronto para escanear!');
+            console.log('🌐 Acesse: https://' + (process.env.RENDER_EXTERNAL_HOSTNAME || 'seu-projeto') + '.onrender.com/');
             console.log('📱 Ou acesse: Configurações do WhatsApp > Dispositivos vinculados > Vincular dispositivo');
         } catch (err) {
             console.error('❌ Erro ao gerar QR Code:', err);
@@ -273,26 +271,179 @@ async function startBot() {
 // =====================================
 const app = express();
 
-// Serve arquivos estáticos da pasta 'public'
-app.use(express.static(path.join(__dirname, 'public')));
-
-// Rota principal - mostra uma página simples com o link do QR Code
+// Rota principal - mostra o QR Code
 app.get('/', (req, res) => {
-    res.send(`
-        <h1>🤖 Bot Zap - Figurinhas</h1>
-        <p>Para conectar o bot, escaneie o QR Code abaixo:</p>
-        <img src="/qrcode.png" alt="QR Code" style="max-width: 300px;">
-        <p>Ou acesse: <a href="/qrcode.png">/qrcode.png</a></p>
-        <hr>
-        <p><strong>Comando:</strong> Responda uma imagem com <code>!fig</code></p>
-        <p><strong>Grupo:</strong> os mídia de rec</p>
-    `);
+    if (latestQRCode) {
+        // Se o QR Code já foi gerado, mostra a página com ele
+        res.send(`
+            <!DOCTYPE html>
+            <html>
+            <head>
+                <title>Bot Zap - Figurinhas</title>
+                <meta charset="UTF-8">
+                <meta name="viewport" content="width=device-width, initial-scale=1.0">
+                <style>
+                    body {
+                        font-family: Arial, sans-serif;
+                        max-width: 600px;
+                        margin: 0 auto;
+                        padding: 20px;
+                        text-align: center;
+                        background: #f5f5f5;
+                    }
+                    .card {
+                        background: white;
+                        border-radius: 12px;
+                        padding: 30px;
+                        box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+                    }
+                    img {
+                        max-width: 100%;
+                        height: auto;
+                        border: 3px solid #ddd;
+                        border-radius: 8px;
+                        margin: 20px 0;
+                    }
+                    .status {
+                        display: inline-block;
+                        padding: 8px 16px;
+                        border-radius: 20px;
+                        font-weight: bold;
+                    }
+                    .waiting { background: #ffc107; color: #000; }
+                    .connected { background: #4CAF50; color: #fff; }
+                    code {
+                        background: #f0f0f0;
+                        padding: 2px 8px;
+                        border-radius: 4px;
+                        font-family: monospace;
+                    }
+                    hr {
+                        margin: 30px 0;
+                        border: 1px solid #eee;
+                    }
+                </style>
+            </head>
+            <body>
+                <div class="card">
+                    <h1>🤖 Bot Zap - Figurinhas</h1>
+                    <p><strong>Status:</strong> <span class="status waiting">⏳ Aguardando conexão...</span></p>
+                    <p>Para conectar o bot, escaneie o QR Code abaixo com o WhatsApp:</p>
+                    <img src="${latestQRCode}" alt="QR Code">
+                    <p><strong>📌 Como escanear:</strong></p>
+                    <ol style="text-align: left; max-width: 400px; margin: 0 auto;">
+                        <li>Abra o WhatsApp no celular</li>
+                        <li>Vá em <strong>Configurações</strong> → <strong>Dispositivos vinculados</strong></li>
+                        <li>Toque em <strong>Vincular um dispositivo</strong></li>
+                        <li>Aponte a câmera para o QR Code acima</li>
+                    </ol>
+                    <hr>
+                    <p><strong>Comando:</strong> Responda uma imagem com <code>!fig</code></p>
+                    <p><strong>Grupo:</strong> os mídia de rec</p>
+                    <p style="font-size: 12px; color: #999;">O QR Code expira em alguns minutos. Atualize a página se necessário.</p>
+                </div>
+                <script>
+                    // Atualiza a página automaticamente a cada 30 segundos para verificar se o QR Code mudou
+                    setTimeout(() => location.reload(), 30000);
+                </script>
+            </body>
+            </html>
+        `);
+    } else {
+        // QR Code ainda não foi gerado
+        res.send(`
+            <!DOCTYPE html>
+            <html>
+            <head>
+                <title>Bot Zap - Figurinhas</title>
+                <meta charset="UTF-8">
+                <meta name="viewport" content="width=device-width, initial-scale=1.0">
+                <style>
+                    body {
+                        font-family: Arial, sans-serif;
+                        max-width: 600px;
+                        margin: 0 auto;
+                        padding: 20px;
+                        text-align: center;
+                        background: #f5f5f5;
+                    }
+                    .card {
+                        background: white;
+                        border-radius: 12px;
+                        padding: 30px;
+                        box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+                    }
+                    .loading {
+                        font-size: 48px;
+                        margin: 20px 0;
+                    }
+                    .spinner {
+                        border: 4px solid #f3f3f3;
+                        border-top: 4px solid #3498db;
+                        border-radius: 50%;
+                        width: 40px;
+                        height: 40px;
+                        animation: spin 1s linear infinite;
+                        margin: 20px auto;
+                    }
+                    @keyframes spin {
+                        0% { transform: rotate(0deg); }
+                        100% { transform: rotate(360deg); }
+                    }
+                </style>
+            </head>
+            <body>
+                <div class="card">
+                    <h1>🤖 Bot Zap - Figurinhas</h1>
+                    <div class="loading">⏳</div>
+                    <h2>Aguardando QR Code...</h2>
+                    <div class="spinner"></div>
+                    <p>O bot está iniciando. O QR Code aparecerá em alguns segundos.</p>
+                    <p>Atualize a página se não aparecer em 1 minuto.</p>
+                    <hr>
+                    <p><strong>Comando:</strong> Responda uma imagem com <code>!fig</code></p>
+                    <p><strong>Grupo:</strong> os mídia de rec</p>
+                </div>
+                <script>
+                    // Atualiza a página automaticamente a cada 5 segundos até o QR Code aparecer
+                    setTimeout(() => location.reload(), 5000);
+                </script>
+            </body>
+            </html>
+        `);
+    }
+});
+
+// Rota para servir apenas o QR Code em formato PNG (para escanear com outros apps)
+app.get('/qrcode', (req, res) => {
+    if (latestQRCode) {
+        // Remove o prefixo "data:image/png;base64," para obter apenas o base64
+        const base64Data = latestQRCode.replace(/^data:image\/png;base64,/, '');
+        const imgBuffer = Buffer.from(base64Data, 'base64');
+        res.writeHead(200, {
+            'Content-Type': 'image/png',
+            'Content-Length': imgBuffer.length
+        });
+        res.end(imgBuffer);
+    } else {
+        res.status(404).send('QR Code ainda não foi gerado. Aguarde alguns segundos.');
+    }
+});
+
+// Rota de status (para verificar se o bot está vivo)
+app.get('/status', (req, res) => {
+    res.json({
+        status: 'online',
+        connected: latestQRCode !== null,
+        queueSize: queue.length,
+        isProcessing: isProcessing
+    });
 });
 
 // Inicia o servidor web
 app.listen(PORT, '0.0.0.0', () => {
     console.log(`✅ Servidor HTTP rodando na porta ${PORT}`);
-    console.log(`🌐 Acesse: https://${process.env.RENDER_EXTERNAL_HOSTNAME || 'seu-projeto'}.onrender.com/ para escanear o QR Code`);
+    console.log(`🌐 Acesse: https://${process.env.RENDER_EXTERNAL_HOSTNAME || 'seu-projeto'}.onrender.com/`);
 });
 
 // =====================================
