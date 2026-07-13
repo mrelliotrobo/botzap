@@ -2,7 +2,7 @@ const { Client, LocalAuth, MessageMedia } = require('whatsapp-web.js');
 const qrcode = require('qrcode');
 const sharp = require('sharp');
 const fs = require('fs');
-const path = require('path');
+const http = require('http');
 const chromium = require('@sparticuz/chromium');
 
 // =====================================
@@ -18,8 +18,49 @@ const PROCESS_DELAY_MIN = 4000;
 const PROCESS_DELAY_MAX = 7000;
 const MAX_QUEUE_SIZE = 50;
 
+// Variável para guardar o QR Code em buffer (para servir via HTTP)
+let qrCodeBuffer = null;
+
 // =====================================
-// CLIENTE WHATSAPP (com suporte ao Render)
+// FUNÇÃO PARA GERAR QR CODE E SALVAR EM MEMÓRIA
+// =====================================
+async function generateQRCode(qrData) {
+    try {
+        qrCodeBuffer = await qrcode.toBuffer(qrData, {
+            type: 'png',
+            width: 300,
+            margin: 2,
+            color: {
+                dark: '#000000',
+                light: '#ffffff'
+            }
+        });
+        console.log('✅ QR Code gerado e armazenado em memória.');
+    } catch (err) {
+        console.error('❌ Erro ao gerar QR Code:', err);
+    }
+}
+
+// =====================================
+// SERVIDOR HTTP PARA EXIBIR O QR CODE
+// =====================================
+const server = http.createServer((req, res) => {
+    if (req.url === '/' || req.url === '/qrcode') {
+        if (qrCodeBuffer) {
+            res.writeHead(200, { 'Content-Type': 'image/png' });
+            res.end(qrCodeBuffer);
+        } else {
+            res.writeHead(404, { 'Content-Type': 'text/plain' });
+            res.end('QR Code não disponível ainda. Aguarde o bot iniciar.');
+        }
+    } else {
+        res.writeHead(404, { 'Content-Type': 'text/plain' });
+        res.end('Not Found');
+    }
+});
+
+// =====================================
+// INICIALIZA O CLIENTE WHATSAPP
 // =====================================
 (async () => {
     const client = new Client({
@@ -208,36 +249,13 @@ const MAX_QUEUE_SIZE = 50;
     });
 
     // =====================================
-    // QR CODE E AUTENTICAÇÃO
+    // EVENTO QR CODE
     // =====================================
     client.on('qr', async (qr) => {
         console.log('🔑 QR Code gerado!');
-        
-        try {
-            // Cria a pasta public se não existir
-            const publicDir = path.join(__dirname, 'public');
-            if (!fs.existsSync(publicDir)) {
-                fs.mkdirSync(publicDir, { recursive: true });
-            }
-            
-            // Gera a imagem PNG do QR Code
-            const qrPath = path.join(publicDir, 'qrcode.png');
-            await qrcode.toFile(qrPath, qr, {
-                type: 'png',
-                width: 300,
-                margin: 2,
-                color: {
-                    dark: '#000000',
-                    light: '#ffffff'
-                }
-            });
-            
-            console.log(`📱 QR Code salvo em: ${qrPath}`);
-            console.log(`🌐 Acesse: https://seu-projeto.onrender.com/qrcode.png para escanear`);
-            console.log('📱 Ou acesse: Configurações do WhatsApp > Dispositivos vinculados > Vincular dispositivo');
-        } catch (err) {
-            console.error('❌ Erro ao gerar QR Code:', err);
-        }
+        await generateQRCode(qr);
+        console.log(`🌐 Acesse: https://seu-projeto.onrender.com/ para escanear o QR Code`);
+        console.log('📱 Ou acesse: Configurações do WhatsApp > Dispositivos vinculados > Vincular dispositivo');
     });
 
     client.on('ready', () => {
@@ -260,8 +278,14 @@ const MAX_QUEUE_SIZE = 50;
     });
 
     // =====================================
-    // INICIALIZA
+    // INICIALIZA O CLIENTE E O SERVIDOR HTTP
     // =====================================
+    const PORT = process.env.PORT || 10000;
+    server.listen(PORT, () => {
+        console.log(`✅ Servidor HTTP rodando na porta ${PORT}`);
+        console.log(`🌐 Acesse: https://seu-projeto.onrender.com/ para escanear o QR Code`);
+    });
+
     client.initialize().catch(err => {
         console.error('❌ Erro ao inicializar:', err);
     });
